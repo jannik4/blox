@@ -1,4 +1,8 @@
-use crate::{AppState, screens::ScreenSetup, world::BloxWorld};
+use crate::{
+    AppState, AssetsState,
+    screens::ScreenSetup,
+    world::{Block, BloxScene, BloxWorld, WORLD_SIZE, WorldAssets},
+};
 use bevy::{
     asset::RenderAssetUsages,
     platform::time::Instant,
@@ -6,6 +10,9 @@ use bevy::{
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     window::PrimaryWindow,
 };
+use bevy_asset_loader::loading_state::config::LoadingStateConfig;
+use bevy_asset_loader::prelude::*;
+use std::sync::Arc;
 
 // TODO: Do not use bevy_ui but custom node that allows partial updates of the resulting image
 // to stream pixels over multiple frames.
@@ -14,6 +21,11 @@ pub fn plugin(app: &mut App) {
     // Setup and cleanup
     app.add_systems(OnEnter(AppState::Game), setup.after(ScreenSetup));
     app.add_systems(OnExit(AppState::Game), cleanup);
+
+    // Assets
+    app.configure_loading_state(
+        LoadingStateConfig::new(AssetsState::Loading).finally_init_resource::<BlockTextures>(),
+    );
 
     // Update
     app.add_systems(Update, update.run_if(in_state(AppState::Game)));
@@ -43,6 +55,7 @@ fn update(
     clear_color: Res<ClearColor>,
     mut images: ResMut<Assets<Image>>,
     world: Res<BloxWorld>,
+    block_textures: Res<BlockTextures>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
 ) {
     // if !keyboard_input.just_pressed(KeyCode::KeyT) {
@@ -60,7 +73,10 @@ fn update(
     }
     image.0.display = Display::DEFAULT;
 
-    let scene = world.to_scene();
+    let scene = LuxScene {
+        scene: world.to_scene(),
+        textures: Arc::clone(&block_textures.textures),
+    };
     let dimensions = window.physical_size() / 1;
     let renderer = lux::Renderer::init(
         lux::Camera {
@@ -95,4 +111,164 @@ fn update(
         TextureFormat::bevy_default(),
         RenderAssetUsages::default(),
     );
+}
+
+#[derive(Debug, Clone, Resource)]
+struct BlockTextures {
+    textures: Arc<[BlockTexture]>,
+}
+
+impl FromWorld for BlockTextures {
+    fn from_world(world: &mut World) -> Self {
+        let mut textures = Vec::new();
+
+        let world_assets = world.resource::<WorldAssets>();
+        let images = world.resource::<Assets<Image>>();
+        for handle in &world_assets.block_images {
+            let image = images.get(handle).unwrap();
+
+            assert_eq!(
+                image.texture_descriptor.format,
+                TextureFormat::Rgba8UnormSrgb
+            );
+
+            textures.push(BlockTexture {
+                size: image.size(),
+                data: image
+                    .data
+                    .as_ref()
+                    .unwrap()
+                    .chunks(4)
+                    .map(|chunk| {
+                        LinearRgba::from(Srgba::new(
+                            chunk[0] as f32 / 255.0,
+                            chunk[1] as f32 / 255.0,
+                            chunk[2] as f32 / 255.0,
+                            chunk[3] as f32 / 255.0,
+                        ))
+                    })
+                    .collect(),
+            });
+        }
+
+        Self {
+            textures: textures.into(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct BlockTexture {
+    size: UVec2,
+    data: Vec<LinearRgba>,
+}
+
+#[derive(Debug)]
+struct LuxScene {
+    scene: BloxScene,
+    textures: Arc<[BlockTexture]>,
+}
+
+impl lux::Scene for LuxScene {
+    fn cast_ray(&self, ray: Ray3d) -> Option<lux::RayHit> {
+        fn interval(start: f32, speed: f32) -> Option<(f32, f32)> {
+            if (start < 0.0 && speed <= 0.0) || (start > WORLD_SIZE as f32 && speed >= 0.0) {
+                None
+            } else if speed == 0.0 {
+                (start >= 0.0 && start < WORLD_SIZE as f32)
+                    .then_some((f32::NEG_INFINITY, f32::INFINITY))
+            } else {
+                let t1 = -start / speed;
+                let t2 = (WORLD_SIZE as f32 - start) / speed;
+                let (t1, t2) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
+                Some((t1.max(0.0), t2))
+            }
+        }
+
+        fn clamp_origin(ray: Ray3d) -> Option<Vec3> {
+            if ray.origin.x >= 0.0
+                && ray.origin.x < WORLD_SIZE as f32
+                && ray.origin.y >= 0.0
+                && ray.origin.y < WORLD_SIZE as f32
+                && ray.origin.z >= 0.0
+                && ray.origin.z < WORLD_SIZE as f32
+            {
+                return Some(ray.origin);
+            }
+
+            let x = interval(ray.origin.x, ray.direction.x)?;
+            let y = interval(ray.origin.y, ray.direction.y)?;
+            let z = interval(ray.origin.z, ray.direction.z)?;
+
+            let interval = (x.0.max(y.0).max(z.0), x.1.min(y.1).min(z.1));
+
+            (interval.0 <= interval.1).then_some(ray.origin + interval.0 * ray.direction)
+        }
+
+        fn time_to_edge(pos: f32, block: i32, speed: f32) -> (f32, i32) {
+            if speed > 0.0 {
+                (((block as f32) + 1.0 - pos) / speed, 1)
+            } else if speed < 0.0 {
+                (((block as f32) - pos) / speed, -1)
+            } else {
+                (f32::INFINITY, 0)
+            }
+        }
+
+        // Clamp origin to world bounds
+        let mut current_position = clamp_origin(ray)?;
+
+        // Current block from position
+        // - add small epsilon to avoid rounding issues when clamped to edge
+        // - floor to get block coordinates
+        // - clamp to world bounds
+        let mut current_block = (current_position + Vec3::splat(0.001))
+            .floor()
+            .as_ivec3()
+            .min(IVec3::splat(WORLD_SIZE as i32 - 1));
+
+        // Distance traveled
+        let mut distance = Vec3::distance(ray.origin, current_position);
+
+        loop {
+            {
+                // Check block
+                let block = self.scene.block(current_block)?;
+                if block != Block::Air {
+                    let c = f32::min(distance / 32.0, 1.0);
+                    return Some(lux::RayHit {
+                        material: lux::Material::Diffuse {
+                            albedo: LinearRgba::new(c, c, c, 1.0),
+                        },
+                        position: current_position,
+                        normal: Vec3::X, // TODO: ...
+                        distance,
+                    });
+                }
+
+                // Find next edge over all 3 axes
+                let (time, delta) = [0, 1, 2]
+                    .into_iter()
+                    .map(|i| {
+                        let (time, delta_scalar) = time_to_edge(
+                            current_position.to_array()[i],
+                            current_block.to_array()[i],
+                            ray.direction.to_array()[i],
+                        );
+
+                        let mut delta = IVec3::ZERO;
+                        delta[i] = delta_scalar;
+
+                        (time, delta)
+                    })
+                    .min_by(|(a_time, _), (b_time, _)| a_time.partial_cmp(b_time).unwrap())
+                    .unwrap();
+
+                // Step
+                current_position += ray.direction * time;
+                distance += time;
+                current_block += delta;
+            }
+        }
+    }
 }

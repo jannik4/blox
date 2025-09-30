@@ -11,7 +11,7 @@ use bevy::{
 };
 use bevy_asset_loader::prelude::*;
 
-const WORLD_SIZE: usize = 15;
+pub const WORLD_SIZE: usize = 15;
 const WORLD_BLOCK_COUNT: usize = WORLD_SIZE * WORLD_SIZE * WORLD_SIZE;
 
 pub fn plugin(app: &mut App) {
@@ -35,7 +35,7 @@ pub fn plugin(app: &mut App) {
 }
 
 #[derive(AssetCollection, Resource)]
-struct WorldAssets {
+pub struct WorldAssets {
     #[asset(
         paths(
             "blocks/000_dirt.png",
@@ -49,14 +49,14 @@ struct WorldAssets {
         ),
         collection(typed)
     )]
-    block_images: Vec<Handle<Image>>,
+    pub block_images: Vec<Handle<Image>>,
 
     #[expect(unused)] // Only place this here to ensure the shader is loaded
     #[asset(path = "shaders/block.wgsl")]
     block_shader: Handle<Shader>,
 }
 
-#[derive(AssetCollection, Resource)]
+#[derive(Resource)]
 struct WorldAssetsDyn {
     block_mesh: Handle<Mesh>,
     block_material: Handle<ExtendedMaterial<StandardMaterial, BlockExtension>>,
@@ -207,12 +207,12 @@ fn block_mesh() -> Mesh {
     .with_inserted_indices(indices)
 }
 
-#[derive(Debug, Resource)]
-pub struct BloxWorldScene {
+#[derive(Debug)]
+pub struct BloxScene {
     blocks: Box<[Block; WORLD_BLOCK_COUNT]>,
 }
 
-impl BloxWorldScene {
+impl BloxScene {
     pub fn empty() -> Self {
         Self {
             blocks: vec![Block::Air; WORLD_BLOCK_COUNT].try_into().unwrap(),
@@ -226,110 +226,6 @@ impl BloxWorldScene {
     pub fn set_block(&mut self, pos: IVec3, block: Block) {
         if let Some(i) = linearize(pos) {
             self.blocks[i] = block;
-        }
-    }
-}
-
-impl lux::Scene for BloxWorldScene {
-    fn cast_ray(&self, ray: Ray3d) -> Option<lux::RayHit> {
-        fn interval(start: f32, speed: f32) -> Option<(f32, f32)> {
-            if (start < 0.0 && speed <= 0.0) || (start > WORLD_SIZE as f32 && speed >= 0.0) {
-                None
-            } else if speed == 0.0 {
-                (start >= 0.0 && start < WORLD_SIZE as f32)
-                    .then_some((f32::NEG_INFINITY, f32::INFINITY))
-            } else {
-                let t1 = -start / speed;
-                let t2 = (WORLD_SIZE as f32 - start) / speed;
-                let (t1, t2) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
-                Some((t1.max(0.0), t2))
-            }
-        }
-
-        fn clamp_origin(ray: Ray3d) -> Option<Vec3> {
-            if ray.origin.x >= 0.0
-                && ray.origin.x < WORLD_SIZE as f32
-                && ray.origin.y >= 0.0
-                && ray.origin.y < WORLD_SIZE as f32
-                && ray.origin.z >= 0.0
-                && ray.origin.z < WORLD_SIZE as f32
-            {
-                return Some(ray.origin);
-            }
-
-            let x = interval(ray.origin.x, ray.direction.x)?;
-            let y = interval(ray.origin.y, ray.direction.y)?;
-            let z = interval(ray.origin.z, ray.direction.z)?;
-
-            let interval = (x.0.max(y.0).max(z.0), x.1.min(y.1).min(z.1));
-
-            (interval.0 <= interval.1).then_some(ray.origin + interval.0 * ray.direction)
-        }
-
-        fn time_to_edge(pos: f32, block: i32, speed: f32) -> (f32, i32) {
-            if speed > 0.0 {
-                (((block as f32) + 1.0 - pos) / speed, 1)
-            } else if speed < 0.0 {
-                (((block as f32) - pos) / speed, -1)
-            } else {
-                (f32::INFINITY, 0)
-            }
-        }
-
-        // Clamp origin to world bounds
-        let mut current_position = clamp_origin(ray)?;
-
-        // Current block from position
-        // - add small epsilon to avoid rounding issues when clamped to edge
-        // - floor to get block coordinates
-        // - clamp to world bounds
-        let mut current_block = (current_position + Vec3::splat(0.001))
-            .floor()
-            .as_ivec3()
-            .min(IVec3::splat(WORLD_SIZE as i32 - 1));
-
-        // Distance traveled
-        let mut distance = Vec3::distance(ray.origin, current_position);
-
-        loop {
-            {
-                // Check block
-                let block = self.block(current_block)?;
-                if block != Block::Air {
-                    let c = f32::min(distance / 32.0, 1.0);
-                    return Some(lux::RayHit {
-                        material: lux::Material::Diffuse {
-                            albedo: LinearRgba::new(c, c, c, 1.0),
-                        },
-                        position: current_position,
-                        normal: Vec3::X, // TODO: ...
-                        distance,
-                    });
-                }
-
-                // Find next edge over all 3 axes
-                let (time, delta) = [0, 1, 2]
-                    .into_iter()
-                    .map(|i| {
-                        let (time, delta_scalar) = time_to_edge(
-                            current_position.to_array()[i],
-                            current_block.to_array()[i],
-                            ray.direction.to_array()[i],
-                        );
-
-                        let mut delta = IVec3::ZERO;
-                        delta[i] = delta_scalar;
-
-                        (time, delta)
-                    })
-                    .min_by(|(a_time, _), (b_time, _)| a_time.partial_cmp(b_time).unwrap())
-                    .unwrap();
-
-                // Step
-                current_position += ray.direction * time;
-                distance += time;
-                current_block += delta;
-            }
         }
     }
 }
@@ -350,14 +246,14 @@ impl BloxWorld {
         }
     }
 
-    pub fn from_scene(scene: &BloxWorldScene) -> Self {
+    pub fn from_scene(scene: &BloxScene) -> Self {
         let mut world = Self::empty();
         world.load_scene(scene);
         world
     }
 
-    pub fn to_scene(&self) -> BloxWorldScene {
-        let mut scene = BloxWorldScene::empty();
+    pub fn to_scene(&self) -> BloxScene {
+        let mut scene = BloxScene::empty();
         for i in 0..(WORLD_BLOCK_COUNT) {
             scene.blocks[i] = self.blocks[i].block;
         }
@@ -375,7 +271,7 @@ impl BloxWorld {
         }
     }
 
-    pub fn load_scene(&mut self, scene: &BloxWorldScene) {
+    pub fn load_scene(&mut self, scene: &BloxScene) {
         for i in 0..(WORLD_BLOCK_COUNT) {
             self.blocks[i].block = scene.blocks[i];
         }
@@ -542,8 +438,8 @@ fn linearize(pos: IVec3) -> Option<usize> {
     }
 }
 
-fn default_scene() -> BloxWorldScene {
-    let mut scene = BloxWorldScene::empty();
+fn default_scene() -> BloxScene {
+    let mut scene = BloxScene::empty();
 
     for x in 0..WORLD_SIZE as i32 {
         for z in 0..WORLD_SIZE as i32 {
