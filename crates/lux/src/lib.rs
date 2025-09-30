@@ -46,7 +46,7 @@ impl Renderer {
         let viewport_width = viewport_height * (dimensions.x as f32 / dimensions.y as f32);
 
         let w = -*camera.direction;
-        let u = camera.up.cross(w);
+        let u = camera.up.cross(w).normalize();
         let v = w.cross(u);
 
         let viewport_u = viewport_width * u;
