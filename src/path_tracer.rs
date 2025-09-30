@@ -127,7 +127,9 @@ fn update(
     let start = Instant::now();
     let pixels = renderer.render(&scene);
     let elapsed = start.elapsed();
-    log::info!("Rendered in {:?}", elapsed);
+    if *mode == RenderMode::SingleFrame {
+        log::info!("Rendered in {:?}", elapsed);
+    }
 
     *images.get_mut(&image.1.image).unwrap() = Image::new(
         Extent3d {
