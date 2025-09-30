@@ -48,7 +48,18 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 
 fn cleanup(mut _commands: Commands) {}
 
+#[derive(Debug, Default, PartialEq, Eq)]
+enum RenderMode {
+    Disabled,
+    #[default]
+    Continuous,
+    SingleFrame,
+}
+
 fn update(
+    mut mode: Local<RenderMode>,
+    mut transparent: Local<bool>,
+
     mut image: Single<(&mut Node, &mut ImageNode)>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&GlobalTransform, &Projection), With<Camera3d>>,
@@ -58,26 +69,47 @@ fn update(
     block_textures: Res<BlockTextures>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
 ) {
-    // if !keyboard_input.just_pressed(KeyCode::KeyT) {
-    //     return;
-    // }
-    // let rebuild = keyboard_input.pressed(KeyCode::ShiftLeft);
-    let rebuild = true;
+    let mut rebuild = false;
 
-    if !rebuild {
-        image.0.display = match image.0.display {
-            Display::DEFAULT => Display::None,
-            _ => Display::DEFAULT,
-        };
+    if keyboard_input.just_pressed(KeyCode::Digit1) {
+        *mode = RenderMode::Disabled;
+    } else if keyboard_input.just_pressed(KeyCode::Digit2) {
+        *mode = RenderMode::Continuous;
+    } else if keyboard_input.just_pressed(KeyCode::Digit3) {
+        *mode = RenderMode::SingleFrame;
+        rebuild = true;
+    }
+
+    if keyboard_input.just_pressed(KeyCode::KeyT) {
+        *transparent = !*transparent;
+        rebuild = true;
+    }
+
+    if *mode == RenderMode::Disabled {
+        image.0.display = Display::None;
         return;
     }
     image.0.display = Display::DEFAULT;
+
+    if *mode == RenderMode::Continuous {
+        rebuild = true;
+    }
+
+    if !rebuild {
+        return;
+    }
+
+    let scale = match *mode {
+        RenderMode::SingleFrame => 1,
+        RenderMode::Continuous => 4,
+        RenderMode::Disabled => unreachable!(),
+    };
 
     let scene = LuxScene {
         scene: world.to_scene(),
         textures: block_textures.clone(),
     };
-    let dimensions = window.physical_size() / 1;
+    let dimensions = window.physical_size() / scale;
     let renderer = lux::Renderer::init(
         lux::Camera {
             translation: camera.0.translation(),
@@ -106,7 +138,13 @@ fn update(
         TextureDimension::D2,
         pixels
             .into_iter()
-            .flat_map(|p| p.to_srgba().with_alpha(1.0).to_u8_array())
+            .flat_map(|p| {
+                if *transparent {
+                    p.to_srgba().with_alpha(0.5).to_u8_array()
+                } else {
+                    p.to_srgba().with_alpha(1.0).to_u8_array()
+                }
+            })
             .collect(),
         TextureFormat::bevy_default(),
         RenderAssetUsages::default(),
