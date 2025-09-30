@@ -276,18 +276,30 @@ impl lux::Scene for BloxWorldScene {
             }
         }
 
+        // Clamp origin to world bounds
         let mut current_position = clamp_origin(ray)?;
-        let mut current_block = current_position.floor().as_ivec3();
-        let mut distance = 0.0;
+
+        // Current block from position
+        // - add small epsilon to avoid rounding issues when clamped to edge
+        // - floor to get block coordinates
+        // - clamp to world bounds
+        let mut current_block = (current_position + Vec3::splat(0.001))
+            .floor()
+            .as_ivec3()
+            .min(IVec3::splat(WORLD_SIZE as i32 - 1));
+
+        // Distance traveled
+        let mut distance = Vec3::distance(ray.origin, current_position);
 
         loop {
             {
                 // Check block
                 let block = self.block(current_block)?;
                 if block != Block::Air {
+                    let c = f32::min(distance / 32.0, 1.0);
                     return Some(lux::RayHit {
                         material: lux::Material::Diffuse {
-                            albedo: LinearRgba::WHITE,
+                            albedo: LinearRgba::new(c, c, c, 1.0),
                         },
                         position: current_position,
                         normal: Vec3::X, // TODO: ...
@@ -295,7 +307,7 @@ impl lux::Scene for BloxWorldScene {
                     });
                 }
 
-                // ...
+                // Find next edge over all 3 axes
                 let (time, delta) = [0, 1, 2]
                     .into_iter()
                     .map(|i| {
@@ -313,7 +325,7 @@ impl lux::Scene for BloxWorldScene {
                     .min_by(|(a_time, _), (b_time, _)| a_time.partial_cmp(b_time).unwrap())
                     .unwrap();
 
-                // ...
+                // Step
                 current_position += ray.direction * time;
                 distance += time;
                 current_block += delta;
