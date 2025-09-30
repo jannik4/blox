@@ -61,7 +61,7 @@ fn update(
     image.0.display = Display::DEFAULT;
 
     let scene = world.to_scene();
-    let dimensions = window.physical_size() / 4;
+    let dimensions = window.physical_size() / 1;
     let renderer = lux::Renderer::init(
         lux::Camera {
             translation: camera.0.translation(),
@@ -90,7 +90,7 @@ fn update(
         TextureDimension::D2,
         pixels
             .into_iter()
-            .flat_map(|p| p.to_srgba().with_alpha(0.5).to_u8_array())
+            .flat_map(|p| p.to_srgba().with_alpha(0.75).to_u8_array())
             .collect(),
         TextureFormat::bevy_default(),
         RenderAssetUsages::default(),
