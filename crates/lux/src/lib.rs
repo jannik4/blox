@@ -1,5 +1,6 @@
 use bevy_color::prelude::*;
 use bevy_math::prelude::*;
+use std::thread;
 
 pub trait Scene {
     fn cast_ray(&self, ray: Ray3d) -> Option<RayHit>;
@@ -68,16 +69,41 @@ impl Renderer {
         }
     }
 
-    // TODO: Do in parallel on non-wasm
-    pub fn render<S: Scene>(&self, scene: &S) -> Vec<Color> {
-        let mut pixels = Vec::with_capacity((self.dimensions.x * self.dimensions.y) as usize);
-        for y in 0..self.dimensions.y {
-            for x in 0..self.dimensions.x {
-                let pixel = self.render_pixel(scene, UVec2::new(x, y));
-                pixels.push(pixel);
-            }
-        }
+    pub fn render<S: Scene + Send + Sync>(&self, scene: &S) -> Vec<Color> {
+        let mut pixels = vec![Color::BLACK; (self.dimensions.x * self.dimensions.y) as usize];
+        self.render_into(scene, &mut pixels);
         pixels
+    }
+
+    // TODO: Do in parallel on non-wasm targets
+    pub fn render_into<S: Scene + Send + Sync>(&self, scene: &S, pixels: &mut [Color]) {
+        assert!(pixels.len() == (self.dimensions.x * self.dimensions.y) as usize);
+
+        // for y in 0..self.dimensions.y {
+        //     let offset = (y * self.dimensions.x) as usize;
+        //     for x in 0..self.dimensions.x {
+        //         let pixel = self.render_pixel(scene, UVec2::new(x, y));
+        //         pixels[offset + x as usize] = pixel;
+        //     }
+        // }
+
+        let threads = thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        let chunk_size = pixels.len() / threads;
+        thread::scope(|s| {
+            for (chunk_index, chunk) in pixels.chunks_mut(chunk_size).enumerate() {
+                s.spawn(move || {
+                    let offset = chunk_index * chunk_size;
+                    for (i, pixel) in chunk.iter_mut().enumerate() {
+                        let index = offset + i;
+                        let x = (index % (self.dimensions.x as usize)) as u32;
+                        let y = (index / (self.dimensions.x as usize)) as u32;
+                        *pixel = self.render_pixel(scene, UVec2::new(x, y));
+                    }
+                });
+            }
+        });
     }
 
     pub fn render_pixel<S: Scene>(&self, scene: &S, pixel: UVec2) -> Color {
