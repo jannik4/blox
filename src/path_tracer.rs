@@ -75,7 +75,7 @@ fn update(
 
     let scene = LuxScene {
         scene: world.to_scene(),
-        textures: Arc::clone(&block_textures.textures),
+        textures: block_textures.clone(),
     };
     let dimensions = window.physical_size() / 1;
     let renderer = lux::Renderer::init(
@@ -106,7 +106,7 @@ fn update(
         TextureDimension::D2,
         pixels
             .into_iter()
-            .flat_map(|p| p.to_srgba().with_alpha(0.75).to_u8_array())
+            .flat_map(|p| p.to_srgba().with_alpha(1.0).to_u8_array())
             .collect(),
         TextureFormat::bevy_default(),
         RenderAssetUsages::default(),
@@ -116,6 +116,27 @@ fn update(
 #[derive(Debug, Clone, Resource)]
 struct BlockTextures {
     textures: Arc<[BlockTexture]>,
+}
+
+impl BlockTextures {
+    fn sample(&self, block: Block, face: Face, uv: Vec2) -> lux::Material {
+        lux::Material::Diffuse {
+            albedo: match block {
+                Block::Air => LinearRgba::NAN,
+                Block::Dirt => self.textures[0].sample(uv),
+                Block::Stone => self.textures[1].sample(uv),
+                Block::Sand => self.textures[2].sample(uv),
+                Block::Grass => match face {
+                    Face::YPos => self.textures[4].sample(uv),
+                    Face::YNeg => self.textures[0].sample(uv),
+                    _ => self.textures[3].sample(uv),
+                },
+                Block::Wood => self.textures[5].sample(uv),
+                Block::Leaves => self.textures[6].sample(uv),
+                Block::Water => self.textures[7].sample(uv),
+            },
+        }
+    }
 }
 
 impl FromWorld for BlockTextures {
@@ -163,10 +184,19 @@ struct BlockTexture {
     data: Vec<LinearRgba>,
 }
 
+impl BlockTexture {
+    fn sample(&self, uv: Vec2) -> LinearRgba {
+        let uv = uv.fract();
+        let u = (uv.x * self.size.x as f32).clamp(0.0, self.size.x as f32 - 1.0) as u32;
+        let v = (uv.y * self.size.y as f32).clamp(0.0, self.size.y as f32 - 1.0) as u32;
+        self.data[(v * self.size.x + u) as usize]
+    }
+}
+
 #[derive(Debug)]
 struct LuxScene {
     scene: BloxScene,
-    textures: Arc<[BlockTexture]>,
+    textures: BlockTextures,
 }
 
 impl lux::Scene for LuxScene {
@@ -215,14 +245,38 @@ impl lux::Scene for LuxScene {
             }
         }
 
+        fn face_and_uv(pos: Vec3, block: IVec3) -> (Face, Vec2) {
+            let rel = pos - block.as_vec3();
+            let (face, _dis) = [
+                (Face::XNeg, f32::abs(rel.x)),
+                (Face::XPos, f32::abs(1.0 - rel.x)),
+                (Face::YNeg, f32::abs(rel.y)),
+                (Face::YPos, f32::abs(1.0 - rel.y)),
+                (Face::ZNeg, f32::abs(rel.z)),
+                (Face::ZPos, f32::abs(1.0 - rel.z)),
+            ]
+            .into_iter()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .unwrap();
+            let uv = match face {
+                Face::XNeg => Vec2::new(1.0 - rel.z, 1.0 - rel.y),
+                Face::XPos => Vec2::new(rel.z, 1.0 - rel.y),
+                Face::YNeg => Vec2::new(rel.x, rel.z),
+                Face::YPos => Vec2::new(rel.x, 1.0 - rel.z),
+                Face::ZNeg => Vec2::new(1.0 - rel.x, 1.0 - rel.y),
+                Face::ZPos => Vec2::new(rel.x, 1.0 - rel.y),
+            };
+            (face, uv)
+        }
+
         // Clamp origin to world bounds
-        let mut current_position = clamp_origin(ray)?;
+        // - add small epsilon to avoid rounding issues when clamped to edge
+        let mut current_position = clamp_origin(ray)? + Vec3::splat(0.001);
 
         // Current block from position
-        // - add small epsilon to avoid rounding issues when clamped to edge
         // - floor to get block coordinates
         // - clamp to world bounds
-        let mut current_block = (current_position + Vec3::splat(0.001))
+        let mut current_block = current_position
             .floor()
             .as_ivec3()
             .min(IVec3::splat(WORLD_SIZE as i32 - 1));
@@ -235,11 +289,10 @@ impl lux::Scene for LuxScene {
                 // Check block
                 let block = self.scene.block(current_block)?;
                 if block != Block::Air {
-                    let c = f32::min(distance / 32.0, 1.0);
+                    let (face, uv) = face_and_uv(current_position, current_block);
+                    // let c = f32::min(distance / 32.0, 1.0);
                     return Some(lux::RayHit {
-                        material: lux::Material::Diffuse {
-                            albedo: LinearRgba::new(c, c, c, 1.0),
-                        },
+                        material: self.textures.sample(block, face, uv),
                         position: current_position,
                         normal: Vec3::X, // TODO: ...
                         distance,
@@ -271,4 +324,14 @@ impl lux::Scene for LuxScene {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Face {
+    XNeg,
+    XPos,
+    YNeg,
+    YPos,
+    ZNeg,
+    ZPos,
 }
