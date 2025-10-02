@@ -42,6 +42,8 @@ pub struct Renderer {
     pixel_delta_u: Vec3,
     pixel_delta_v: Vec3,
     top_left_pixel: Vec3,
+
+    shadow_bias: f32,
 }
 
 impl Renderer {
@@ -72,6 +74,8 @@ impl Renderer {
             pixel_delta_u,
             pixel_delta_v,
             top_left_pixel,
+
+            shadow_bias: 0.001,
         }
     }
 
@@ -131,7 +135,8 @@ impl Renderer {
                         match *light {
                             Light::Directional { direction } => {
                                 let shadow_ray = Ray3d {
-                                    origin: hit.position,
+                                    origin: hit.position
+                                        + self.shadow_bias * (*hit.normal - *direction),
                                     direction: -direction,
                                 };
                                 let light_intensity = if scene.cast_ray(shadow_ray).is_some() {

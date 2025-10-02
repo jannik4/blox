@@ -343,17 +343,13 @@ impl lux::Scene for LuxScene {
                 let block = self.scene.block(current_block)?;
                 if block != Block::Air {
                     let (face, uv) = face_and_uv(current_position, current_block);
-                    let normal = face.normal();
 
-                    // Check direction against normal to avoid hitting back faces
-                    if normal.dot(*ray.direction) < 0.0 {
-                        return Some(lux::RayHit {
-                            material: self.textures.sample(block, face, uv),
-                            position: current_position,
-                            normal,
-                            distance,
-                        });
-                    }
+                    return Some(lux::RayHit {
+                        material: self.textures.sample(block, face, uv),
+                        position: current_position,
+                        normal: face.normal(),
+                        distance,
+                    });
                 }
 
                 // Find next edge over all 3 axes
