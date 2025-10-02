@@ -161,7 +161,7 @@ impl Renderer {
                                 direction: dir_to_light,
                             };
                             let light_intensity = match scene.cast_ray(shadow_ray) {
-                                Some(_) => 0.0,
+                                Some(_) => continue,
                                 None => intensity,
                             };
                             let light_power =
