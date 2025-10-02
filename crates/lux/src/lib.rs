@@ -1,6 +1,6 @@
 use bevy_color::prelude::*;
 use bevy_math::prelude::*;
-use std::thread;
+use std::{f32::consts::PI, thread};
 
 pub trait Scene {
     fn lights(&self) -> &[Light];
@@ -9,7 +9,15 @@ pub trait Scene {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Light {
-    Directional { direction: Dir3 },
+    Ambient {
+        color: LinearRgba,
+        intensity: f32,
+    },
+    Directional {
+        direction: Dir3,
+        color: LinearRgba,
+        intensity: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -125,34 +133,56 @@ impl Renderer {
             direction: Dir3::new(pixel - self.camera.translation).unwrap(),
         };
 
-        let hit = scene.cast_ray(ray);
+        let Some(surface) = scene.cast_ray(ray) else {
+            return self.camera.background;
+        };
 
-        match hit {
-            Some(hit) => match hit.material {
-                Material::Diffuse { albedo } => {
-                    let mut color = LinearRgba::BLACK;
-                    for light in scene.lights() {
-                        match *light {
-                            Light::Directional { direction } => {
-                                let shadow_ray = Ray3d {
-                                    origin: hit.position
-                                        + self.shadow_bias * (*hit.normal - *direction),
-                                    direction: -direction,
-                                };
-                                let light_intensity = if scene.cast_ray(shadow_ray).is_some() {
-                                    0.1
-                                } else {
-                                    1.0
-                                };
-                                color += light_intensity * albedo;
-                            }
+        match surface.material {
+            Material::Diffuse { albedo } => {
+                let mut color = LinearRgba::BLACK;
+
+                for light in scene.lights() {
+                    match *light {
+                        Light::Ambient {
+                            color: light_color,
+                            intensity,
+                        } => {
+                            color += apply_light(albedo, light_color * intensity);
+                        }
+                        Light::Directional {
+                            direction,
+                            color: light_color,
+                            intensity,
+                        } => {
+                            let dir_to_light = -direction;
+                            let shadow_ray = Ray3d {
+                                origin: surface.position
+                                    + self.shadow_bias * (*surface.normal + *dir_to_light),
+                                direction: dir_to_light,
+                            };
+                            let light_intensity = match scene.cast_ray(shadow_ray) {
+                                Some(_) => 0.0,
+                                None => intensity,
+                            };
+                            let light_power =
+                                surface.normal.dot(*dir_to_light).max(0.0) * light_intensity;
+
+                            color += apply_light(albedo, light_color * light_power / PI);
                         }
                     }
-
-                    color.into()
                 }
-            },
-            None => self.camera.background,
+
+                color.into()
+            }
         }
     }
+}
+
+fn apply_light(color: LinearRgba, light: LinearRgba) -> LinearRgba {
+    LinearRgba::new(
+        color.red * light.red,
+        color.green * light.green,
+        color.blue * light.blue,
+        color.alpha,
+    )
 }

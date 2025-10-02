@@ -111,7 +111,13 @@ fn update(
             .iter()
             .map(|transform| lux::Light::Directional {
                 direction: transform.forward(),
+                color: LinearRgba::WHITE,
+                intensity: 2.0,
             })
+            .chain([lux::Light::Ambient {
+                color: LinearRgba::WHITE,
+                intensity: 0.1,
+            }])
             .collect(),
         scene: world.to_scene(),
         textures: block_textures.clone(),
