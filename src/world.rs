@@ -441,8 +441,10 @@ fn linearize(pos: IVec3) -> Option<usize> {
 fn default_scene() -> BloxScene {
     let mut scene = BloxScene::empty();
 
-    for x in 0..WORLD_SIZE as i32 {
-        for z in 0..WORLD_SIZE as i32 {
+    let size = WORLD_SIZE as i32;
+
+    for x in 0..size {
+        for z in 0..size {
             scene.set_block(IVec3::new(x, 0, z), Block::Stone);
 
             scene.set_block(
@@ -454,7 +456,7 @@ fn default_scene() -> BloxScene {
                 },
             );
 
-            if x == 0 || x == 14 || z == 0 || z == 14 {
+            if x == 0 || x == size - 1 || z == 0 || z == size - 1 {
                 scene.set_block(IVec3::new(x, 2, z), Block::Wood);
             }
         }
