@@ -462,8 +462,8 @@ fn default_scene() -> BloxScene {
         }
     }
 
-    scene.set_block(IVec3::new(5, 2, 5), Block::Sand);
-    scene.set_block(IVec3::new(5, 3, 5), Block::Sand);
+    scene.set_block(IVec3::new(9, 2, 5), Block::Sand);
+    scene.set_block(IVec3::new(9, 3, 5), Block::Sand);
 
     scene
 }
