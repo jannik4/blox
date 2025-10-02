@@ -290,9 +290,7 @@ impl lux::Scene for LuxScene {
 
             let interval = (x.0.max(y.0).max(z.0), x.1.min(y.1).min(z.1));
 
-            // Add small epsilon to avoid rounding issues when clamped to edge
-            (interval.0 <= interval.1)
-                .then(|| ray.origin + interval.0 * ray.direction + Vec3::splat(0.001))
+            (interval.0 <= interval.1).then(|| ray.origin + interval.0 * ray.direction)
         }
 
         fn time_to_edge(pos: f32, block: i32, speed: f32) -> (f32, i32) {
@@ -345,9 +343,17 @@ impl lux::Scene for LuxScene {
 
         loop {
             {
+                // Stop if outside of extended world bounds
+                if current_block.cmplt(IVec3::splat(-1)).any()
+                    || current_block.cmpge(IVec3::splat(WORLD_SIZE as i32)).any()
+                {
+                    return None;
+                }
+
                 // Check block
-                let block = self.scene.block(current_block)?;
-                if block != Block::Air {
+                if let Some(block) = self.scene.block(current_block)
+                    && block != Block::Air
+                {
                     let (face, uv) = face_and_uv(current_position, current_block);
 
                     return Some(lux::RayHit {
