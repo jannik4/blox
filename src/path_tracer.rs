@@ -63,6 +63,7 @@ fn update(
     mut image: Single<(&mut Node, &mut ImageNode)>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&GlobalTransform, &Projection), With<Camera3d>>,
+    directional_lights: Query<&GlobalTransform, With<DirectionalLight>>,
     clear_color: Res<ClearColor>,
     mut images: ResMut<Assets<Image>>,
     world: Res<BloxWorld>,
@@ -106,6 +107,12 @@ fn update(
     };
 
     let scene = LuxScene {
+        lights: directional_lights
+            .iter()
+            .map(|transform| lux::Light::Directional {
+                direction: transform.forward(),
+            })
+            .collect(),
         scene: world.to_scene(),
         textures: block_textures.clone(),
     };
@@ -235,11 +242,16 @@ impl BlockTexture {
 
 #[derive(Debug)]
 struct LuxScene {
+    lights: Vec<lux::Light>,
     scene: BloxScene,
     textures: BlockTextures,
 }
 
 impl lux::Scene for LuxScene {
+    fn lights(&self) -> &[lux::Light] {
+        &self.lights
+    }
+
     fn cast_ray(&self, ray: Ray3d) -> Option<lux::RayHit> {
         fn interval(start: f32, speed: f32) -> Option<(f32, f32)> {
             if (start < 0.0 && speed <= 0.0) || (start > WORLD_SIZE as f32 && speed >= 0.0) {

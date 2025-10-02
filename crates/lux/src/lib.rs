@@ -3,7 +3,13 @@ use bevy_math::prelude::*;
 use std::thread;
 
 pub trait Scene {
+    fn lights(&self) -> &[Light];
     fn cast_ray(&self, ray: Ray3d) -> Option<RayHit>;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Light {
+    Directional { direction: Dir3 },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -120,15 +126,23 @@ impl Renderer {
         match hit {
             Some(hit) => match hit.material {
                 Material::Diffuse { albedo } => {
-                    let shadow_ray = Ray3d {
-                        origin: hit.position,
-                        direction: Dir3::new(Vec3::new(1.0, 0.5, 1.0)).unwrap(),
-                    };
-                    let color = if scene.cast_ray(shadow_ray).is_some() {
-                        0.1 * albedo
-                    } else {
-                        albedo
-                    };
+                    let mut color = LinearRgba::BLACK;
+                    for light in scene.lights() {
+                        match *light {
+                            Light::Directional { direction } => {
+                                let shadow_ray = Ray3d {
+                                    origin: hit.position,
+                                    direction: -direction,
+                                };
+                                let light_intensity = if scene.cast_ray(shadow_ray).is_some() {
+                                    0.1
+                                } else {
+                                    1.0
+                                };
+                                color += light_intensity * albedo;
+                            }
+                        }
+                    }
 
                     color.into()
                 }
