@@ -342,51 +342,49 @@ impl lux::Scene for LuxScene {
         let mut distance = Vec3::distance(ray.origin, current_position);
 
         loop {
+            // Stop if outside of extended world bounds
+            if current_block.cmplt(IVec3::splat(-1)).any()
+                || current_block.cmpge(IVec3::splat(WORLD_SIZE as i32)).any()
             {
-                // Stop if outside of extended world bounds
-                if current_block.cmplt(IVec3::splat(-1)).any()
-                    || current_block.cmpge(IVec3::splat(WORLD_SIZE as i32)).any()
-                {
-                    return None;
-                }
-
-                // Check block
-                if let Some(block) = self.scene.block(current_block)
-                    && block != Block::Air
-                {
-                    let (face, uv) = face_and_uv(current_position, current_block);
-
-                    return Some(lux::RayHit {
-                        material: self.textures.sample(block, face, uv),
-                        position: current_position,
-                        normal: face.normal(),
-                        distance,
-                    });
-                }
-
-                // Find next edge over all 3 axes
-                let (time, delta) = [0, 1, 2]
-                    .into_iter()
-                    .map(|i| {
-                        let (time, delta_scalar) = time_to_edge(
-                            current_position.to_array()[i],
-                            current_block.to_array()[i],
-                            ray.direction.to_array()[i],
-                        );
-
-                        let mut delta = IVec3::ZERO;
-                        delta[i] = delta_scalar;
-
-                        (time, delta)
-                    })
-                    .min_by(|(a_time, _), (b_time, _)| a_time.partial_cmp(b_time).unwrap())
-                    .unwrap();
-
-                // Step
-                current_position += ray.direction * time;
-                distance += time;
-                current_block += delta;
+                return None;
             }
+
+            // Check block
+            if let Some(block) = self.scene.block(current_block)
+                && block != Block::Air
+            {
+                let (face, uv) = face_and_uv(current_position, current_block);
+
+                return Some(lux::RayHit {
+                    material: self.textures.sample(block, face, uv),
+                    position: current_position,
+                    normal: face.normal(),
+                    distance,
+                });
+            }
+
+            // Find next edge over all 3 axes
+            let (time, delta) = [0, 1, 2]
+                .into_iter()
+                .map(|i| {
+                    let (time, delta_scalar) = time_to_edge(
+                        current_position.to_array()[i],
+                        current_block.to_array()[i],
+                        ray.direction.to_array()[i],
+                    );
+
+                    let mut delta = IVec3::ZERO;
+                    delta[i] = delta_scalar;
+
+                    (time, delta)
+                })
+                .min_by(|(a_time, _), (b_time, _)| a_time.partial_cmp(b_time).unwrap())
+                .unwrap();
+
+            // Step
+            current_position += ray.direction * time;
+            distance += time;
+            current_block += delta;
         }
     }
 }
