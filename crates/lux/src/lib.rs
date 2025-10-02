@@ -10,7 +10,7 @@ pub trait Scene {
 pub struct RayHit {
     pub material: Material,
     pub position: Vec3,
-    pub normal: Vec3,
+    pub normal: Dir3,
     pub distance: f32,
 }
 
@@ -119,7 +119,19 @@ impl Renderer {
 
         match hit {
             Some(hit) => match hit.material {
-                Material::Diffuse { albedo } => albedo.into(),
+                Material::Diffuse { albedo } => {
+                    let shadow_ray = Ray3d {
+                        origin: hit.position,
+                        direction: Dir3::new(Vec3::new(1.0, 0.5, 1.0)).unwrap(),
+                    };
+                    let color = if scene.cast_ray(shadow_ray).is_some() {
+                        0.1 * albedo
+                    } else {
+                        albedo
+                    };
+
+                    color.into()
+                }
             },
             None => self.camera.background,
         }

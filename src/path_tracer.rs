@@ -272,7 +272,9 @@ impl lux::Scene for LuxScene {
 
             let interval = (x.0.max(y.0).max(z.0), x.1.min(y.1).min(z.1));
 
-            (interval.0 <= interval.1).then_some(ray.origin + interval.0 * ray.direction)
+            // Add small epsilon to avoid rounding issues when clamped to edge
+            (interval.0 <= interval.1)
+                .then(|| ray.origin + interval.0 * ray.direction + Vec3::splat(0.001))
         }
 
         fn time_to_edge(pos: f32, block: i32, speed: f32) -> (f32, i32) {
@@ -310,8 +312,7 @@ impl lux::Scene for LuxScene {
         }
 
         // Clamp origin to world bounds
-        // - add small epsilon to avoid rounding issues when clamped to edge
-        let mut current_position = clamp_origin(ray)? + Vec3::splat(0.001);
+        let mut current_position = clamp_origin(ray)?;
 
         // Current block from position
         // - floor to get block coordinates
@@ -330,13 +331,17 @@ impl lux::Scene for LuxScene {
                 let block = self.scene.block(current_block)?;
                 if block != Block::Air {
                     let (face, uv) = face_and_uv(current_position, current_block);
-                    // let c = f32::min(distance / 32.0, 1.0);
-                    return Some(lux::RayHit {
-                        material: self.textures.sample(block, face, uv),
-                        position: current_position,
-                        normal: Vec3::X, // TODO: ...
-                        distance,
-                    });
+                    let normal = face.normal();
+
+                    // Check direction against normal to avoid hitting back faces
+                    if normal.dot(*ray.direction) < 0.0 {
+                        return Some(lux::RayHit {
+                            material: self.textures.sample(block, face, uv),
+                            position: current_position,
+                            normal,
+                            distance,
+                        });
+                    }
                 }
 
                 // Find next edge over all 3 axes
@@ -374,4 +379,17 @@ enum Face {
     YPos,
     ZNeg,
     ZPos,
+}
+
+impl Face {
+    fn normal(&self) -> Dir3 {
+        match self {
+            Face::XNeg => -Dir3::X,
+            Face::XPos => Dir3::X,
+            Face::YNeg => -Dir3::Y,
+            Face::YPos => Dir3::Y,
+            Face::ZNeg => -Dir3::Z,
+            Face::ZPos => Dir3::Z,
+        }
+    }
 }
