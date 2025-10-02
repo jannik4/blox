@@ -112,11 +112,11 @@ fn update(
             .map(|transform| lux::Light::Directional {
                 direction: transform.forward(),
                 color: LinearRgba::WHITE,
-                intensity: 2.0,
+                intensity: 5.0,
             })
             .chain([lux::Light::Ambient {
                 color: LinearRgba::WHITE,
-                intensity: 0.1,
+                intensity: 0.05,
             }])
             .collect(),
         scene: world.to_scene(),
