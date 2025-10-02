@@ -317,10 +317,10 @@ impl lux::Scene for LuxScene {
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
             .unwrap();
             let uv = match face {
-                Face::XNeg => Vec2::new(1.0 - rel.z, 1.0 - rel.y),
-                Face::XPos => Vec2::new(rel.z, 1.0 - rel.y),
-                Face::YNeg => Vec2::new(rel.x, rel.z),
-                Face::YPos => Vec2::new(rel.x, 1.0 - rel.z),
+                Face::XNeg => Vec2::new(rel.z, 1.0 - rel.y),
+                Face::XPos => Vec2::new(1.0 - rel.z, 1.0 - rel.y),
+                Face::YNeg => Vec2::new(rel.x, 1.0 - rel.z),
+                Face::YPos => Vec2::new(rel.x, rel.z),
                 Face::ZNeg => Vec2::new(1.0 - rel.x, 1.0 - rel.y),
                 Face::ZPos => Vec2::new(rel.x, 1.0 - rel.y),
             };
