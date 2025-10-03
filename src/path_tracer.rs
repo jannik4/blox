@@ -143,7 +143,7 @@ fn update(
                 Projection::Perspective(p) => p.fov,
                 _ => PerspectiveProjection::default().fov,
             },
-            background: **clear_color,
+            background: (**clear_color).into(),
         },
         dimensions,
     );
@@ -184,21 +184,34 @@ struct BlockTextures {
 
 impl BlockTextures {
     fn sample(&self, block: Block, face: Face, uv: Vec2) -> lux::Material {
-        lux::Material::Diffuse {
-            albedo: match block {
-                Block::Air => LinearRgba::NAN,
-                Block::Dirt => self.textures[0].sample(uv),
-                Block::Stone => self.textures[1].sample(uv),
-                Block::Sand => self.textures[2].sample(uv),
-                Block::Grass => match face {
-                    Face::YPos => self.textures[4].sample(uv),
-                    Face::YNeg => self.textures[0].sample(uv),
-                    _ => self.textures[3].sample(uv),
-                },
-                Block::Wood => self.textures[5].sample(uv),
-                Block::Leaves => self.textures[6].sample(uv),
-                Block::Water => self.textures[7].sample(uv),
+        fn diffuse(albedo: LinearRgba) -> lux::Material {
+            lux::Material::Diffuse { albedo }
+        }
+        fn reflective(albedo: LinearRgba, reflectivity: f32) -> lux::Material {
+            lux::Material::Reflective {
+                albedo,
+                reflectivity,
+            }
+        }
+
+        match block {
+            Block::Air => diffuse(LinearRgba::NAN),
+            Block::Dirt => diffuse(self.textures[0].sample(uv)),
+            Block::Stone => diffuse(self.textures[1].sample(uv)),
+            Block::Sand => diffuse(self.textures[2].sample(uv)),
+            Block::Grass => match face {
+                Face::YPos => diffuse(self.textures[4].sample(uv)),
+                Face::YNeg => diffuse(self.textures[0].sample(uv)),
+                _ => diffuse(self.textures[3].sample(uv)),
             },
+            Block::Wood => diffuse(self.textures[5].sample(uv)),
+            Block::Leaves => diffuse(self.textures[6].sample(uv)),
+            Block::Water => diffuse(self.textures[7].sample(uv)),
+            Block::Glass => {
+                let mut color = self.textures[8].sample(uv);
+                let alpha = std::mem::replace(&mut color.alpha, 1.0);
+                reflective(color, 1.0 - alpha)
+            }
         }
     }
 }

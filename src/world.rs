@@ -45,7 +45,8 @@ pub struct WorldAssets {
             "blocks/004_grass_top.png",
             "blocks/005_wood.png",
             "blocks/006_leaves.png",
-            "blocks/007_water.png"
+            "blocks/007_water.png",
+            "blocks/008_glass.png"
         ),
         collection(typed)
     )]
@@ -418,12 +419,13 @@ pub enum Block {
     Wood = 5,
     Leaves = 6,
     Water = 7,
+    Glass = 8,
 }
 
 impl Block {
     pub fn is_solid(&self) -> bool {
         match self {
-            Block::Air | Block::Leaves | Block::Water => false,
+            Block::Air | Block::Leaves | Block::Water | Block::Glass => false,
             Block::Dirt | Block::Stone | Block::Sand | Block::Grass | Block::Wood => true,
         }
     }
@@ -464,6 +466,11 @@ fn default_scene() -> BloxScene {
 
     scene.set_block(IVec3::new(9, 2, 5), Block::Sand);
     scene.set_block(IVec3::new(9, 3, 5), Block::Sand);
+
+    for z in 7..=9 {
+        scene.set_block(IVec3::new(4, 2, z), Block::Glass);
+        scene.set_block(IVec3::new(4, 3, z), Block::Glass);
+    }
 
     scene
 }

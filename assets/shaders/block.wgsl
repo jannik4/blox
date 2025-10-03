@@ -55,6 +55,7 @@ fn fragment(
         case 5u: { layer = 5; }
         case 6u: { layer = 6; }
         case 7u: { layer = 7; }
+        case 8u: { layer = 8; }
         default: {}
     }
 

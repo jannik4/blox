@@ -35,7 +35,13 @@ pub struct RayHit {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Material {
-    Diffuse { albedo: LinearRgba },
+    Diffuse {
+        albedo: LinearRgba,
+    },
+    Reflective {
+        albedo: LinearRgba,
+        reflectivity: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -44,7 +50,7 @@ pub struct Camera {
     pub direction: Dir3,
     pub up: Dir3,
     pub fov: f32,
-    pub background: Color,
+    pub background: LinearRgba,
 }
 
 #[derive(Debug)]
@@ -57,6 +63,7 @@ pub struct Renderer {
     top_left_pixel: Vec3,
 
     shadow_bias: f32,
+    max_recursion_depth: u32,
 }
 
 impl Renderer {
@@ -89,6 +96,7 @@ impl Renderer {
             top_left_pixel,
 
             shadow_bias: 0.001,
+            max_recursion_depth: 10,
         }
     }
 
@@ -138,70 +146,108 @@ impl Renderer {
             direction: Dir3::new(pixel - self.camera.translation).unwrap(),
         };
 
+        self.cast_ray(scene, ray, 0).into()
+    }
+
+    fn cast_ray<S: Scene>(&self, scene: &S, ray: Ray3d, depth: u32) -> LinearRgba {
+        if depth >= self.max_recursion_depth {
+            return self.camera.background;
+        }
+
         let Some(surface) = scene.cast_ray(ray, f32::INFINITY) else {
             return self.camera.background;
         };
 
         match surface.material {
             Material::Diffuse { albedo } => {
-                let mut color = LinearRgba::BLACK;
-
-                for light in scene.lights() {
-                    match *light {
-                        Light::Ambient {
-                            color: light_color,
-                            intensity,
-                        } => {
-                            color += apply_light(albedo, light_color * intensity);
-                        }
-                        Light::Directional {
-                            direction,
-                            color: light_color,
-                            intensity,
-                        } => {
-                            let dir_to_light = -direction;
-                            let shadow_ray = Ray3d {
-                                origin: surface.position
-                                    + self.shadow_bias * (*surface.normal + *dir_to_light),
-                                direction: dir_to_light,
-                            };
-                            let light_intensity = match scene.cast_ray(shadow_ray, f32::INFINITY) {
-                                Some(_) => continue,
-                                None => intensity,
-                            };
-                            let light_power =
-                                surface.normal.dot(*dir_to_light).max(0.0) * light_intensity;
-
-                            color += apply_light(albedo, light_color * light_power / PI);
-                        }
-                        Light::Point {
-                            position,
-                            color: light_color,
-                            intensity,
-                        } => {
-                            let dir_to_light = Dir3::new(position - surface.position).unwrap();
-                            let shadow_ray = Ray3d {
-                                origin: surface.position
-                                    + self.shadow_bias * (*surface.normal + *dir_to_light),
-                                direction: dir_to_light,
-                            };
-                            let distance_squared =
-                                Vec3::distance_squared(position, surface.position);
-                            let light_intensity =
-                                match scene.cast_ray(shadow_ray, distance_squared.sqrt()) {
-                                    Some(_) => continue,
-                                    None => intensity / (4.0 * PI * distance_squared),
-                                };
-                            let light_power =
-                                surface.normal.dot(*dir_to_light).max(0.0) * light_intensity;
-
-                            color += apply_light(albedo, light_color * light_power / PI);
-                        }
-                    }
-                }
-
-                color.into()
+                self.shade_diffuse(scene, albedo, surface.position, surface.normal)
             }
+            Material::Reflective {
+                albedo,
+                reflectivity,
+            } => {
+                let this = self.shade_diffuse(scene, albedo, surface.position, surface.normal);
+                let reflected = self.cast_ray(
+                    scene,
+                    self.reflect_ray(ray.direction, surface.position, surface.normal),
+                    depth + 1,
+                );
+                LinearRgba::mix(&this, &reflected, reflectivity)
+            }
+        }
+    }
+
+    fn shade_diffuse<S: Scene>(
+        &self,
+        scene: &S,
+        albedo: LinearRgba,
+        surface_position: Vec3,
+        surface_normal: Dir3,
+    ) -> LinearRgba {
+        let mut result = LinearRgba::BLACK;
+
+        for light in scene.lights() {
+            match *light {
+                Light::Ambient { color, intensity } => {
+                    result += apply_light(albedo, color * intensity);
+                }
+                Light::Directional {
+                    direction,
+                    color,
+                    intensity,
+                } => {
+                    let dir_to_light = -direction;
+                    let shadow_ray =
+                        self.shadow_ray(surface_position, surface_normal, dir_to_light);
+                    let light_intensity = match scene.cast_ray(shadow_ray, f32::INFINITY) {
+                        Some(_) => continue,
+                        None => intensity,
+                    };
+                    let light_power = surface_normal.dot(*dir_to_light).max(0.0) * light_intensity;
+
+                    result += apply_light(albedo, color * light_power / PI);
+                }
+                Light::Point {
+                    position,
+                    color,
+                    intensity,
+                } => {
+                    let dir_to_light = Dir3::new(position - surface_position).unwrap();
+                    let shadow_ray =
+                        self.shadow_ray(surface_position, surface_normal, dir_to_light);
+                    let distance_squared = Vec3::distance_squared(position, surface_position);
+                    let light_intensity = match scene.cast_ray(shadow_ray, distance_squared.sqrt())
+                    {
+                        Some(_) => continue,
+                        None => intensity / (4.0 * PI * distance_squared),
+                    };
+                    let light_power = surface_normal.dot(*dir_to_light).max(0.0) * light_intensity;
+
+                    result += apply_light(albedo, color * light_power / PI);
+                }
+            }
+        }
+
+        result
+    }
+
+    fn shadow_ray(
+        &self,
+        surface_position: Vec3,
+        surface_normal: Dir3,
+        dir_to_light: Dir3,
+    ) -> Ray3d {
+        Ray3d {
+            origin: surface_position + self.shadow_bias * (*surface_normal + *dir_to_light),
+            direction: dir_to_light,
+        }
+    }
+
+    fn reflect_ray(&self, direction: Dir3, hit: Vec3, normal: Dir3) -> Ray3d {
+        let direction = Dir3::new(*direction - (2.0 * direction.dot(*normal) * normal)).unwrap();
+        Ray3d {
+            origin: hit + self.shadow_bias * (*normal + *direction),
+            direction,
         }
     }
 }
