@@ -39,7 +39,7 @@ fn setup(mut commands: Commands) {
     ));
     commands.spawn((
         DirectionalLight {
-            illuminance: 10_000.0,
+            illuminance: 5_000.0,
             shadows_enabled: true,
             ..default()
         },
@@ -52,6 +52,16 @@ fn setup(mut commands: Commands) {
         }
         .build(),
         Transform::from_xyz(-1.0, 0.5, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
+        StateScoped(AppState::Game),
+    ));
+    commands.spawn((
+        PointLight {
+            intensity: 1_000_000.0,
+            range: 75.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        Transform::from_xyz(11.5, 5.5, 7.5),
         StateScoped(AppState::Game),
     ));
 }

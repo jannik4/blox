@@ -4,7 +4,7 @@ use std::{f32::consts::PI, thread};
 
 pub trait Scene {
     fn lights(&self) -> &[Light];
-    fn cast_ray(&self, ray: Ray3d) -> Option<RayHit>;
+    fn cast_ray(&self, ray: Ray3d, max_distance: f32) -> Option<RayHit>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -15,6 +15,11 @@ pub enum Light {
     },
     Directional {
         direction: Dir3,
+        color: LinearRgba,
+        intensity: f32,
+    },
+    Point {
+        position: Vec3,
         color: LinearRgba,
         intensity: f32,
     },
@@ -133,7 +138,7 @@ impl Renderer {
             direction: Dir3::new(pixel - self.camera.translation).unwrap(),
         };
 
-        let Some(surface) = scene.cast_ray(ray) else {
+        let Some(surface) = scene.cast_ray(ray, f32::INFINITY) else {
             return self.camera.background;
         };
 
@@ -160,10 +165,33 @@ impl Renderer {
                                     + self.shadow_bias * (*surface.normal + *dir_to_light),
                                 direction: dir_to_light,
                             };
-                            let light_intensity = match scene.cast_ray(shadow_ray) {
+                            let light_intensity = match scene.cast_ray(shadow_ray, f32::INFINITY) {
                                 Some(_) => continue,
                                 None => intensity,
                             };
+                            let light_power =
+                                surface.normal.dot(*dir_to_light).max(0.0) * light_intensity;
+
+                            color += apply_light(albedo, light_color * light_power / PI);
+                        }
+                        Light::Point {
+                            position,
+                            color: light_color,
+                            intensity,
+                        } => {
+                            let dir_to_light = Dir3::new(position - surface.position).unwrap();
+                            let shadow_ray = Ray3d {
+                                origin: surface.position
+                                    + self.shadow_bias * (*surface.normal + *dir_to_light),
+                                direction: dir_to_light,
+                            };
+                            let distance_squared =
+                                Vec3::distance_squared(position, surface.position);
+                            let light_intensity =
+                                match scene.cast_ray(shadow_ray, distance_squared.sqrt()) {
+                                    Some(_) => continue,
+                                    None => intensity / (4.0 * PI * distance_squared),
+                                };
                             let light_power =
                                 surface.normal.dot(*dir_to_light).max(0.0) * light_intensity;
 

@@ -28,7 +28,12 @@ pub fn plugin(app: &mut App) {
     );
 
     // Update
-    app.add_systems(Update, update.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        PostUpdate,
+        update
+            .after(TransformSystem::TransformPropagate)
+            .run_if(in_state(AppState::Game)),
+    );
 }
 
 fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
@@ -64,6 +69,7 @@ fn update(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&GlobalTransform, &Projection), With<Camera3d>>,
     directional_lights: Query<&GlobalTransform, With<DirectionalLight>>,
+    point_lights: Query<&GlobalTransform, With<PointLight>>,
     clear_color: Res<ClearColor>,
     mut images: ResMut<Assets<Image>>,
     world: Res<BloxWorld>,
@@ -114,6 +120,11 @@ fn update(
                 color: LinearRgba::WHITE,
                 intensity: 5.0,
             })
+            .chain(point_lights.iter().map(|transform| lux::Light::Point {
+                position: transform.translation(),
+                color: LinearRgba::WHITE,
+                intensity: 400.0,
+            }))
             .chain([lux::Light::Ambient {
                 color: LinearRgba::WHITE,
                 intensity: 0.05,
@@ -258,7 +269,7 @@ impl lux::Scene for LuxScene {
         &self.lights
     }
 
-    fn cast_ray(&self, ray: Ray3d) -> Option<lux::RayHit> {
+    fn cast_ray(&self, ray: Ray3d, max_distance: f32) -> Option<lux::RayHit> {
         fn interval(start: f32, speed: f32) -> Option<(f32, f32)> {
             if (start < 0.0 && speed <= 0.0) || (start > WORLD_SIZE as f32 && speed >= 0.0) {
                 None
@@ -341,7 +352,7 @@ impl lux::Scene for LuxScene {
         // Distance traveled
         let mut distance = Vec3::distance(ray.origin, current_position);
 
-        loop {
+        while distance <= max_distance {
             // Stop if outside of extended world bounds
             if current_block.cmplt(IVec3::splat(-1)).any()
                 || current_block.cmpge(IVec3::splat(WORLD_SIZE as i32)).any()
@@ -386,6 +397,8 @@ impl lux::Scene for LuxScene {
             distance += time;
             current_block += delta;
         }
+
+        None
     }
 }
 

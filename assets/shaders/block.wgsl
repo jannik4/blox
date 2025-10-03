@@ -62,11 +62,6 @@ fn fragment(
     var pbr_input = pbr_input_from_standard_material(in, is_front);
     pbr_input.material.base_color = textureSample(blocks_texture, blocks_texture_sampler, in.uv, layer);
 
-    // Hack for more water transparency
-    if block == 7u {
-        pbr_input.material.base_color.a *= 0.5;
-    }
-
     // Output
     var out: FragmentOutput;
     out.color = apply_pbr_lighting(pbr_input);
