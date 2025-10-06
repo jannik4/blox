@@ -1,6 +1,6 @@
 mod camera_controller;
 mod ground;
-mod path_tracer;
+mod ray_tracer;
 mod screens;
 mod util;
 mod world;
@@ -50,7 +50,7 @@ impl Plugin for BloxPlugin {
             ground::plugin,
             world::plugin,
             camera_controller::plugin,
-            path_tracer::plugin,
+            ray_tracer::plugin,
             util::plugin,
         ));
     }

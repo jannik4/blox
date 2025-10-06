@@ -38,7 +38,7 @@ pub fn plugin(app: &mut App) {
 
 fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn((
-        Name::new("Path Tracer"),
+        Name::new("Ray Tracer"),
         Node {
             display: Display::None,
             width: Val::Percent(100.0),
