@@ -1,6 +1,10 @@
 use bevy_color::prelude::*;
 use bevy_math::prelude::*;
-use std::{f32::consts::PI, thread};
+use std::{
+    f32::consts::PI,
+    ops::{Add, AddAssign, Div, Mul},
+    thread,
+};
 
 pub trait Scene {
     fn lights(&self) -> &[Light];
@@ -10,17 +14,17 @@ pub trait Scene {
 #[derive(Debug, Clone, Copy)]
 pub enum Light {
     Ambient {
-        color: LinearRgba,
+        color: LinearRgb,
         intensity: f32,
     },
     Directional {
         direction: Dir3,
-        color: LinearRgba,
+        color: LinearRgb,
         intensity: f32,
     },
     Point {
         position: Vec3,
-        color: LinearRgba,
+        color: LinearRgb,
         intensity: f32,
     },
 }
@@ -36,14 +40,14 @@ pub struct RayHit {
 #[derive(Debug, Clone, Copy)]
 pub enum Material {
     Diffuse {
-        albedo: LinearRgba,
+        albedo: LinearRgb,
     },
     Reflective {
-        albedo: LinearRgba,
+        albedo: LinearRgb,
         reflectivity: f32,
     },
     Refractive {
-        albedo: LinearRgba,
+        albedo: LinearRgb,
         index: f32,
         transparency: f32,
     },
@@ -55,7 +59,7 @@ pub struct Camera {
     pub direction: Dir3,
     pub up: Dir3,
     pub fov: f32,
-    pub background: LinearRgba,
+    pub background: LinearRgb,
 }
 
 #[derive(Debug)]
@@ -154,7 +158,7 @@ impl Renderer {
         self.cast_ray(scene, ray, 0).into()
     }
 
-    fn cast_ray<S: Scene>(&self, scene: &S, ray: Ray3d, depth: u32) -> LinearRgba {
+    fn cast_ray<S: Scene>(&self, scene: &S, ray: Ray3d, depth: u32) -> LinearRgb {
         if depth >= self.max_recursion_depth {
             return self.camera.background;
         }
@@ -177,7 +181,7 @@ impl Renderer {
                     self.reflect_ray(ray.direction, surface.position, surface.normal),
                     depth + 1,
                 );
-                LinearRgba::mix(&this, &reflected, reflectivity)
+                LinearRgb::mix(&this, &reflected, reflectivity)
             }
             Material::Refractive {
                 albedo,
@@ -197,7 +201,7 @@ impl Renderer {
                         depth + 1,
                     )
                 } else {
-                    LinearRgba::BLACK
+                    LinearRgb::BLACK
                 };
                 let reflected = self.cast_ray(
                     scene,
@@ -205,13 +209,7 @@ impl Renderer {
                     depth + 1,
                 );
 
-                let r = LinearRgba::new(
-                    albedo.red * refracted.red,
-                    albedo.green * refracted.green,
-                    albedo.blue * refracted.blue,
-                    albedo.alpha * refracted.alpha,
-                );
-                LinearRgba::mix(&(r * transparency), &reflected, kr)
+                LinearRgb::mix(&(albedo * refracted * transparency), &reflected, kr)
             }
         }
     }
@@ -219,16 +217,16 @@ impl Renderer {
     fn shade_diffuse<S: Scene>(
         &self,
         scene: &S,
-        albedo: LinearRgba,
+        albedo: LinearRgb,
         surface_position: Vec3,
         surface_normal: Dir3,
-    ) -> LinearRgba {
-        let mut result = LinearRgba::BLACK;
+    ) -> LinearRgb {
+        let mut result = LinearRgb::BLACK;
 
         for light in scene.lights() {
             match *light {
                 Light::Ambient { color, intensity } => {
-                    result += apply_light(albedo, color * intensity);
+                    result += albedo * color * intensity;
                 }
                 Light::Directional {
                     direction,
@@ -244,7 +242,7 @@ impl Renderer {
                     };
                     let light_power = surface_normal.dot(*dir_to_light).max(0.0) * light_intensity;
 
-                    result += apply_light(albedo, color * light_power / PI);
+                    result += albedo * color * light_power / PI;
                 }
                 Light::Point {
                     position,
@@ -262,7 +260,7 @@ impl Renderer {
                     };
                     let light_power = surface_normal.dot(*dir_to_light).max(0.0) * light_intensity;
 
-                    result += apply_light(albedo, color * light_power / PI);
+                    result += albedo * color * light_power / PI;
                 }
             }
         }
@@ -317,15 +315,6 @@ impl Renderer {
     }
 }
 
-fn apply_light(color: LinearRgba, light: LinearRgba) -> LinearRgba {
-    LinearRgba::new(
-        color.red * light.red,
-        color.green * light.green,
-        color.blue * light.blue,
-        color.alpha,
-    )
-}
-
 fn fresnel(direction: Dir3, normal: Dir3, index: f32) -> f32 {
     let dir_dot_n = direction.dot(*normal);
     let mut eta_i = 1.0;
@@ -344,5 +333,145 @@ fn fresnel(direction: Dir3, normal: Dir3, index: f32) -> f32 {
         let r_s = ((eta_t * cos_i) - (eta_i * cos_t)) / ((eta_t * cos_i) + (eta_i * cos_t));
         let r_p = ((eta_i * cos_i) - (eta_t * cos_t)) / ((eta_i * cos_i) + (eta_t * cos_t));
         (r_s * r_s + r_p * r_p) / 2.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
+pub struct LinearRgb {
+    /// The red channel. [0.0, 1.0]
+    pub red: f32,
+    /// The green channel. [0.0, 1.0]
+    pub green: f32,
+    /// The blue channel. [0.0, 1.0]
+    pub blue: f32,
+}
+
+impl LinearRgb {
+    pub const BLACK: Self = Self {
+        red: 0.0,
+        green: 0.0,
+        blue: 0.0,
+    };
+
+    pub const WHITE: Self = Self {
+        red: 1.0,
+        green: 1.0,
+        blue: 1.0,
+    };
+
+    pub fn new(red: f32, green: f32, blue: f32) -> Self {
+        Self { red, green, blue }
+    }
+}
+
+impl From<LinearRgba> for LinearRgb {
+    fn from(value: LinearRgba) -> Self {
+        Self {
+            red: value.red,
+            green: value.green,
+            blue: value.blue,
+        }
+    }
+}
+
+impl From<LinearRgb> for LinearRgba {
+    fn from(value: LinearRgb) -> Self {
+        Self {
+            red: value.red,
+            green: value.green,
+            blue: value.blue,
+            alpha: 1.0,
+        }
+    }
+}
+
+impl From<Color> for LinearRgb {
+    fn from(value: Color) -> Self {
+        Self::from(LinearRgba::from(value))
+    }
+}
+
+impl From<LinearRgb> for Color {
+    fn from(value: LinearRgb) -> Self {
+        Color::LinearRgba(LinearRgba::from(value))
+    }
+}
+
+impl Mix for LinearRgb {
+    #[inline]
+    fn mix(&self, other: &Self, factor: f32) -> Self {
+        let n_factor = 1.0 - factor;
+        Self {
+            red: self.red * n_factor + other.red * factor,
+            green: self.green * n_factor + other.green * factor,
+            blue: self.blue * n_factor + other.blue * factor,
+        }
+    }
+}
+
+impl Add<Self> for LinearRgb {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            red: self.red + rhs.red,
+            green: self.green + rhs.green,
+            blue: self.blue + rhs.blue,
+        }
+    }
+}
+
+impl AddAssign<Self> for LinearRgb {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
+impl Mul<Self> for LinearRgb {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self {
+        Self {
+            red: self.red * rhs.red,
+            green: self.green * rhs.green,
+            blue: self.blue * rhs.blue,
+        }
+    }
+}
+
+impl Mul<f32> for LinearRgb {
+    type Output = Self;
+
+    fn mul(self, rhs: f32) -> Self {
+        Self {
+            red: self.red * rhs,
+            green: self.green * rhs,
+            blue: self.blue * rhs,
+        }
+    }
+}
+
+impl Mul<LinearRgb> for f32 {
+    type Output = LinearRgb;
+
+    fn mul(self, rhs: LinearRgb) -> LinearRgb {
+        LinearRgb {
+            red: self * rhs.red,
+            green: self * rhs.green,
+            blue: self * rhs.blue,
+        }
+    }
+}
+
+impl Div<f32> for LinearRgb {
+    type Output = LinearRgb;
+
+    fn div(self, rhs: f32) -> LinearRgb {
+        LinearRgb {
+            red: self.red / rhs,
+            green: self.green / rhs,
+            blue: self.blue / rhs,
+        }
     }
 }

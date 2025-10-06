@@ -117,16 +117,16 @@ fn update(
             .iter()
             .map(|transform| lux::Light::Directional {
                 direction: transform.forward(),
-                color: LinearRgba::WHITE,
+                color: lux::LinearRgb::WHITE,
                 intensity: 5.0,
             })
             .chain(point_lights.iter().map(|transform| lux::Light::Point {
                 position: transform.translation(),
-                color: LinearRgba::WHITE,
+                color: lux::LinearRgb::WHITE,
                 intensity: 400.0,
             }))
             .chain([lux::Light::Ambient {
-                color: LinearRgba::WHITE,
+                color: lux::LinearRgb::WHITE,
                 intensity: 0.05,
             }])
             .collect(),
@@ -184,18 +184,24 @@ struct BlockTextures {
 
 impl BlockTextures {
     fn sample(&self, block: Block, face: Face, uv: Vec2) -> lux::Material {
-        fn diffuse(albedo: LinearRgba) -> lux::Material {
-            lux::Material::Diffuse { albedo }
+        fn diffuse(albedo: impl Into<lux::LinearRgb>) -> lux::Material {
+            lux::Material::Diffuse {
+                albedo: albedo.into(),
+            }
         }
-        fn reflective(albedo: LinearRgba, reflectivity: f32) -> lux::Material {
+        fn reflective(albedo: impl Into<lux::LinearRgb>, reflectivity: f32) -> lux::Material {
             lux::Material::Reflective {
-                albedo,
+                albedo: albedo.into(),
                 reflectivity,
             }
         }
-        fn refractive(albedo: LinearRgba, index: f32, transparency: f32) -> lux::Material {
+        fn refractive(
+            albedo: impl Into<lux::LinearRgb>,
+            index: f32,
+            transparency: f32,
+        ) -> lux::Material {
             lux::Material::Refractive {
-                albedo,
+                albedo: albedo.into(),
                 index,
                 transparency,
             }
@@ -218,13 +224,11 @@ impl BlockTextures {
                 color.red = color.red.powf(0.4);
                 color.green = color.green.powf(0.4);
                 color.blue = color.blue.powf(0.4);
-                let alpha = std::mem::replace(&mut color.alpha, 1.0);
-                refractive(color, 1.33, (1.0 - alpha).powf(0.1))
+                refractive(color, 1.33, (1.0 - color.alpha).powf(0.1))
             }
             Block::Glass => {
-                let mut color = self.textures[8].sample(uv);
-                let alpha = std::mem::replace(&mut color.alpha, 1.0);
-                reflective(color, 1.0 - alpha)
+                let color = self.textures[8].sample(uv);
+                reflective(color, 1.0 - color.alpha)
             }
         }
     }
