@@ -193,6 +193,13 @@ impl BlockTextures {
                 reflectivity,
             }
         }
+        fn refractive(albedo: LinearRgba, index: f32, transparency: f32) -> lux::Material {
+            lux::Material::Refractive {
+                albedo,
+                index,
+                transparency,
+            }
+        }
 
         match block {
             Block::Air => diffuse(LinearRgba::NAN),
@@ -206,7 +213,14 @@ impl BlockTextures {
             },
             Block::Wood => diffuse(self.textures[5].sample(uv)),
             Block::Leaves => diffuse(self.textures[6].sample(uv)),
-            Block::Water => diffuse(self.textures[7].sample(uv)),
+            Block::Water => {
+                let mut color = self.textures[7].sample(uv);
+                color.red = color.red.powf(0.4);
+                color.green = color.green.powf(0.4);
+                color.blue = color.blue.powf(0.4);
+                let alpha = std::mem::replace(&mut color.alpha, 1.0);
+                refractive(color, 1.33, (1.0 - alpha).powf(0.1))
+            }
             Block::Glass => {
                 let mut color = self.textures[8].sample(uv);
                 let alpha = std::mem::replace(&mut color.alpha, 1.0);
@@ -365,6 +379,10 @@ impl lux::Scene for LuxScene {
         // Distance traveled
         let mut distance = Vec3::distance(ray.origin, current_position);
 
+        // Start block
+        let block_start = self.scene.block(current_block).unwrap_or(Block::Air);
+        let mut ignore = !block_start.is_solid();
+
         while distance <= max_distance {
             // Stop if outside of extended world bounds
             if current_block.cmplt(IVec3::splat(-1)).any()
@@ -377,14 +395,19 @@ impl lux::Scene for LuxScene {
             if let Some(block) = self.scene.block(current_block)
                 && block != Block::Air
             {
-                let (face, uv) = face_and_uv(current_position, current_block);
+                ignore &= block == block_start;
+                if !ignore {
+                    let (face, uv) = face_and_uv(current_position, current_block);
 
-                return Some(lux::RayHit {
-                    material: self.textures.sample(block, face, uv),
-                    position: current_position,
-                    normal: face.normal(),
-                    distance,
-                });
+                    return Some(lux::RayHit {
+                        material: self.textures.sample(block, face, uv),
+                        position: current_position,
+                        normal: face.normal(),
+                        distance,
+                    });
+                }
+            } else {
+                ignore = false;
             }
 
             // Find next edge over all 3 axes

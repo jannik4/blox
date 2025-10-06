@@ -42,6 +42,11 @@ pub enum Material {
         albedo: LinearRgba,
         reflectivity: f32,
     },
+    Refractive {
+        albedo: LinearRgba,
+        index: f32,
+        transparency: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -174,6 +179,40 @@ impl Renderer {
                 );
                 LinearRgba::mix(&this, &reflected, reflectivity)
             }
+            Material::Refractive {
+                albedo,
+                index,
+                transparency,
+            } => {
+                let kr = fresnel(ray.direction, surface.normal, index);
+                let refracted = if kr < 1.0 {
+                    self.cast_ray(
+                        scene,
+                        self.transmission_ray(
+                            ray.direction,
+                            surface.position,
+                            surface.normal,
+                            index,
+                        ),
+                        depth + 1,
+                    )
+                } else {
+                    LinearRgba::BLACK
+                };
+                let reflected = self.cast_ray(
+                    scene,
+                    self.reflect_ray(ray.direction, surface.position, surface.normal),
+                    depth + 1,
+                );
+
+                let r = LinearRgba::new(
+                    albedo.red * refracted.red,
+                    albedo.green * refracted.green,
+                    albedo.blue * refracted.blue,
+                    albedo.alpha * refracted.alpha,
+                );
+                LinearRgba::mix(&(r * transparency), &reflected, kr)
+            }
         }
     }
 
@@ -250,6 +289,32 @@ impl Renderer {
             direction,
         }
     }
+
+    fn transmission_ray(&self, direction: Dir3, hit: Vec3, normal: Dir3, index: f32) -> Ray3d {
+        let mut n = normal;
+        let mut eta_t = index;
+        let mut eta_i = 1.0;
+        let mut i_dot_n = direction.dot(*normal);
+
+        if i_dot_n < 0.0 {
+            // Outside the surface
+            i_dot_n = -i_dot_n;
+        } else {
+            // Inside the surface: invert normal and swap indices
+            n = -normal;
+            eta_t = 1.0;
+            eta_i = index;
+        }
+
+        let eta = eta_i / eta_t;
+        let k = 1.0 - (eta * eta) * (1.0 - i_dot_n * i_dot_n);
+
+        let direction = Dir3::new((*direction + i_dot_n * n) * eta - n * k.sqrt()).unwrap();
+        Ray3d {
+            origin: hit + self.shadow_bias * (-*n + *direction),
+            direction,
+        }
+    }
 }
 
 fn apply_light(color: LinearRgba, light: LinearRgba) -> LinearRgba {
@@ -259,4 +324,25 @@ fn apply_light(color: LinearRgba, light: LinearRgba) -> LinearRgba {
         color.blue * light.blue,
         color.alpha,
     )
+}
+
+fn fresnel(direction: Dir3, normal: Dir3, index: f32) -> f32 {
+    let dir_dot_n = direction.dot(*normal);
+    let mut eta_i = 1.0;
+    let mut eta_t = index;
+    if dir_dot_n > 0.0 {
+        eta_i = eta_t;
+        eta_t = 1.0;
+    }
+
+    let sin_t = eta_i / eta_t * (1.0 - dir_dot_n * dir_dot_n).max(0.0).sqrt();
+    if sin_t > 1.0 {
+        1.0
+    } else {
+        let cos_t = (1.0 - sin_t * sin_t).max(0.0).sqrt();
+        let cos_i = cos_t.abs();
+        let r_s = ((eta_t * cos_i) - (eta_i * cos_t)) / ((eta_t * cos_i) + (eta_i * cos_t));
+        let r_p = ((eta_i * cos_i) - (eta_t * cos_t)) / ((eta_i * cos_i) + (eta_t * cos_t));
+        (r_s * r_s + r_p * r_p) / 2.0
+    }
 }
