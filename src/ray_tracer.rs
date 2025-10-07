@@ -398,14 +398,41 @@ impl lux::Scene for LuxScene {
             {
                 ignore &= block == block_start;
                 if !ignore {
-                    let (face, uv) = face_and_uv(current_position, current_block);
+                    let (mut face, mut uv) = face_and_uv(current_position, current_block);
+                    let mut is_hit = true;
 
-                    return Some(lux::RayHit {
-                        material: self.textures.sample(block, face, uv),
-                        position: current_position,
-                        normal: face.normal(),
-                        distance,
-                    });
+                    // Special case top water blocks
+                    let rel_y = current_position.y - current_block.y as f32;
+                    if block == Block::Water
+                        && self.scene.block(current_block + IVec3::Y) != Some(Block::Water)
+                        && rel_y > 0.9
+                    {
+                        if ray.direction.y > 0.0 {
+                            is_hit = false;
+                        } else {
+                            // Try to hit with top face at height 0.9
+                            let t = (0.9 - rel_y) / ray.direction.y;
+                            let hit = current_position + t * ray.direction;
+                            if hit.floor().as_ivec3() == current_block {
+                                current_position = hit;
+                                face = Face::YPos;
+
+                                let rel = hit - current_block.as_vec3();
+                                uv = Vec2::new(rel.x, rel.z);
+                            } else {
+                                is_hit = false;
+                            }
+                        }
+                    }
+
+                    if is_hit {
+                        return Some(lux::RayHit {
+                            material: self.textures.sample(block, face, uv),
+                            position: current_position,
+                            normal: face.normal(),
+                            distance,
+                        });
+                    }
                 }
             } else {
                 ignore = false;
