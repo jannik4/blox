@@ -8,6 +8,8 @@ mod world;
 use bevy::{asset::AssetMetaCheck, prelude::*};
 use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
 
+pub use self::world::{Block, BloxScene, BloxWorld};
+
 pub struct BloxPlugin;
 
 impl Plugin for BloxPlugin {
