@@ -14,9 +14,6 @@ use bevy_asset_loader::loading_state::config::LoadingStateConfig;
 use bevy_asset_loader::prelude::*;
 use std::sync::Arc;
 
-// TODO: Do not use bevy_ui but custom node that allows partial updates of the resulting image
-// to stream pixels over multiple frames.
-
 pub fn plugin(app: &mut App) {
     // Setup and cleanup
     app.add_systems(OnEnter(AppState::Game), setup.after(ScreenSetup));
