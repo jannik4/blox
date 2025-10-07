@@ -292,22 +292,21 @@ impl Renderer {
         let mut n = normal;
         let mut eta_t = index;
         let mut eta_i = 1.0;
-        let mut i_dot_n = direction.dot(*normal);
+        let mut dir_dot_n = direction.dot(*normal);
 
-        if i_dot_n < 0.0 {
+        if dir_dot_n < 0.0 {
             // Outside the surface
-            i_dot_n = -i_dot_n;
+            dir_dot_n = -dir_dot_n;
         } else {
             // Inside the surface: invert normal and swap indices
             n = -normal;
-            eta_t = 1.0;
-            eta_i = index;
+            std::mem::swap(&mut eta_t, &mut eta_i);
         }
 
         let eta = eta_i / eta_t;
-        let k = 1.0 - (eta * eta) * (1.0 - i_dot_n * i_dot_n);
+        let k = 1.0 - (eta * eta) * (1.0 - dir_dot_n * dir_dot_n);
 
-        let direction = Dir3::new((*direction + i_dot_n * n) * eta - n * k.sqrt()).unwrap();
+        let direction = Dir3::new((*direction + dir_dot_n * n) * eta - n * k.sqrt()).unwrap();
         Ray3d {
             origin: hit + self.shadow_bias * (-*n + *direction),
             direction,
