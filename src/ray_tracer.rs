@@ -217,15 +217,12 @@ impl BlockTextures {
             Block::Wood => diffuse(self.textures[5].sample(uv)),
             Block::Leaves => diffuse(self.textures[6].sample(uv)),
             Block::Water => {
-                let mut color = self.textures[7].sample(uv);
-                color.red = color.red.powf(0.4);
-                color.green = color.green.powf(0.4);
-                color.blue = color.blue.powf(0.4);
-                refractive(color, 1.33, (1.0 - color.alpha).powf(0.1))
+                let color = self.textures[7].sample(uv);
+                refractive(color, 1.33, color.alpha)
             }
             Block::Glass => {
                 let color = self.textures[8].sample(uv);
-                reflective(color, 1.0 - color.alpha)
+                reflective(color, color.alpha)
             }
         }
     }
@@ -237,7 +234,7 @@ impl FromWorld for BlockTextures {
 
         let world_assets = world.resource::<WorldAssets>();
         let images = world.resource::<Assets<Image>>();
-        for handle in &world_assets.block_images {
+        for (index, handle) in world_assets.block_images.iter().enumerate() {
             let image = images.get(handle).unwrap();
 
             assert_eq!(
@@ -253,12 +250,30 @@ impl FromWorld for BlockTextures {
                     .unwrap()
                     .chunks(4)
                     .map(|chunk| {
-                        LinearRgba::from(Srgba::new(
+                        let mut color = LinearRgba::from(Srgba::new(
                             chunk[0] as f32 / 255.0,
                             chunk[1] as f32 / 255.0,
                             chunk[2] as f32 / 255.0,
                             chunk[3] as f32 / 255.0,
-                        ))
+                        ));
+
+                        // Apply some transformations
+                        match index {
+                            // Water
+                            7 => {
+                                color.red = color.red.powf(0.4);
+                                color.green = color.green.powf(0.4);
+                                color.blue = color.blue.powf(0.4);
+                                color.alpha = (1.0 - color.alpha).powf(0.1);
+                            }
+                            // Glass
+                            8 => {
+                                color.alpha = 1.0 - color.alpha;
+                            }
+                            _ => (),
+                        }
+
+                        color
                     })
                     .collect(),
             });
